@@ -1,7 +1,7 @@
-import { sql } from "./lib/postgres"
+import { sql } from './lib/postgres'
 
 async function setup() {
-    await sql`
+  await sql`
         CREATE TABLE IF NOT EXISTS short_links (
             id SERIAL PRIMARY KEY,
             code TEXT UNIQUE,
@@ -10,8 +10,8 @@ async function setup() {
         )
     `
 
-    await sql.end()
-    console.log('Setup created successfully')
+  await sql.end()
+  console.log('Setup created successfully')
 }
 
 setup()
