@@ -2,10 +2,44 @@ import fastify from 'fastify'
 import { z } from 'zod'
 import { sql } from './lib/postgres'
 import { PostgresError } from 'postgres'
+import { redis } from './lib/redis'
 
 const app = fastify()
 
-app.post('/links', async (request, reply) => {
+app.get('/:code', async (request, reply) => {
+  const getLinkSchema = z.object({
+    code: z.string().min(3),
+  })
+
+  const { code } = getLinkSchema.parse(request.params)
+
+  const result = await sql`
+    SELECT id, original_url
+    FROM short_links
+    WHERE short_links.code = ${code}
+  `
+  if (result.length === 0) {
+    return reply.status(404).send({ message: 'Link not found.' })
+  }
+
+  const link = result[0]
+
+  await redis.zIncrBy('metrics', 1, String(link.id))
+
+  return reply.redirect(301, link.original_url)
+})
+
+app.get('/api/links', async (request, reply) => {
+  const result = await sql`
+    SELECT *
+    FROM short_links 
+    ORDER BY created_at DESC
+  `
+
+  return reply.status(200).send({ links: result })
+})
+
+app.post('/api/links', async (request, reply) => {
   const createLinkSchema = z.object({
     code: z.string().min(3),
     url: z.string().url(),
@@ -33,6 +67,21 @@ app.post('/links', async (request, reply) => {
     console.error(err)
     return reply.status(500).send({ message: 'Internal error.' })
   }
+})
+
+app.get('/api/metrics', async (request, reply) => {
+  const result = await redis.zRangeByScoreWithScores('metrics', 0, 50)
+
+  const metrics = result
+    .sort((a, b) => b.score - a.score)
+    .map((item) => {
+      return {
+        shortLinkId: Number(item.value),
+        clicks: item.score,
+      }
+    })
+
+  return reply.status(200).send({ topLinks: metrics })
 })
 
 app
